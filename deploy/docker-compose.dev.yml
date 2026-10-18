@@ -1,0 +1,214 @@
+# =============================================================================
+# Guardería · Desarrollo
+# =============================================================================
+#
+# QUÉ ES Y QUÉ NO ES ESTE ARCHIVO
+# -------------------------------
+# Es el despliegue para trabajar en la máquina, con los puertos visibles desde
+# el host y los mensajes de error a la vista.
+#
+# NO es un despliegue de producción. En desarrollo:
+#
+#   - PostgreSQL y Redis publican puertos. No deberían: es el único propósito
+#     de este archivo.
+#   - `APP_DEBUG` puede estar en `true`. Con datos de menores no debería estar
+#     nunca en `true` en una máquina con datos reales.
+#   - La base se recrea. Los datos de este despliegue no valen nada.
+#
+# El despliegue de producción es `docker-compose.prod.yml`, y ahí ninguno de
+# esos puntos aplica. Ver docs/04.
+#
+# -----------------------------------------------------------------------------
+# USO
+# -----------------------------------------------------------------------------
+#   1. Copie `api/.env.example` a `api/.env` y complete los valores.
+#   2. Copie `web/.env.example` a `web/.env` y complete los valores.
+#   3.   docker compose -f deploy/docker-compose.dev.yml up -d
+#   4.   docker compose -f deploy/docker-compose.dev.yml exec api \
+#         php artisan guarderia:verificar-aislamiento
+#
+# El paso 4 NO es opcional. Ver docs/03.
+
+name: guarderia
+
+services:
+
+    # -------------------------------------------------------------------------
+    # PostgreSQL
+    # -------------------------------------------------------------------------
+    postgres:
+        image: postgres:17.6-bookworm
+        restart: unless-stopped
+
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-guarderia}
+            POSTGRES_USER: ${POSTGRES_USER:-guarderia_admin}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en el archivo de entorno}
+            # La página de configuración de PostgreSQL es lenta con las claves
+            # sin aleatoriedad, y en desarrollo se nota. El filesystem de la
+            # base vive en un volumen, no en el disco del sistema.
+            POSTGRES_INITDB_ARGS: "--data-checksums"
+
+        volumes:
+            - datos-postgres:/var/lib/postgresql/data
+
+            # AQUÍ SE CREA EL ROL DE LA APLICACIÓN.
+            #
+            # El servidor de PostgreSQL ejecuta, en orden alfabético y UNA SOLA
+            # VEZ —cuando el volumen está vacío—, todo lo que haya en esta
+            # carpeta. Por eso el prefijo `10-`: si más adelante se agrega otro
+            # script, los números dan el orden y el orden importa.
+            #
+            # Lo que crea este script, y por qué existe, está escrito en el
+            # propio script. Léalo antes de cambiarlo: es la diferencia entre que
+            # las políticas de aislamiento funcionen y que no funcionen.
+            - ../deploy/postgres/inicializar-rol.sh:/docker-entrypoint-initdb.d/10-crear-rol.sh:ro
+
+        # En DESARROLLO se publica el puerto. Es lo único que no se hace en
+        # producción, y es a propósito: en desarrollo se necesita entrar a la
+        # base para ver lo que pasa.
+        ports:
+            - "5432:5432"
+
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-guarderia_admin} -d ${POSTGRES_DB:-guarderia}"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # -------------------------------------------------------------------------
+    # Redis
+    # -------------------------------------------------------------------------
+    #
+    # Estado de sesión y limitadores. NO es la base de datos: ningún dato de
+    # menor está en Redis.
+    redis:
+        image: redis:8.2-alpine
+        restart: unless-stopped
+
+        command:
+            - redis-server
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+
+        volumes:
+            - datos-redis:/data
+
+        ports:
+            - "6379:6379"
+
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+
+    # -------------------------------------------------------------------------
+    # La API
+    # -------------------------------------------------------------------------
+    api:
+        build:
+            context: ..
+            dockerfile: deploy/api/Dockerfile
+        restart: unless-stopped
+
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+
+        environment:
+            APP_ENV: local
+            APP_DEBUG: "false"
+
+            # La configuración NO va en el YAML de producción. En desarrollo sí
+            # se leen de `api/.env`, que no se versiona.
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: ${POSTGRES_DB:-guarderia}
+            # Rol de la APLICACIÓN, no el de arranque. Ver docs/03.
+            DB_USERNAME: guarderia_app
+            DB_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD en el archivo de entorno}
+            DB_SSLMODE: disable
+
+            POSTGRES_USER: ${POSTGRES_USER:-guarderia_admin}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+
+            REDIS_HOST: redis
+            REDIS_PORT: "6379"
+
+            CACHE_STORE: redis
+            SESSION_DRIVER: database
+            QUEUE_CONNECTION: sync
+
+            AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:-}
+            AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:-}
+            AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:-}
+            AUTHENTIK_REDIRECT_URI: ${AUTHENTIK_REDIRECT_URI:-http://localhost:8080/api/v1/auth/retorno}
+            AUTHENTIK_CA: ${AUTHENTIK_CA:-}
+
+            GUARDERIA_DIAS_AVISO_VENCIMIENTO: ${GUARDERIA_DIAS_AVISO_VENCIMIENTO:-15}
+
+        ports:
+            - "8000:8000"
+
+        volumes:
+            # El código montado, para que un cambio se vea sin reconstruir la
+            # imagen. En producción NO se monta nada: la imagen lleva el código
+            # dentro.
+            - ../api:/var/www/html
+            - almacen-api:/var/www/html/storage
+            - almacen-api-bootstrap:/var/www/html/bootstrap/cache
+
+    # -------------------------------------------------------------------------
+    # La interfaz
+    # -------------------------------------------------------------------------
+    web:
+        build:
+            context: ..
+            dockerfile: deploy/web/Dockerfile
+        restart: unless-stopped
+
+        depends_on:
+            - api
+
+        environment:
+            NUXT_API_INTERNA: http://api:8000
+            NUXT_PUBLIC_NOMBRE: ${NUXT_PUBLIC_NOMBRE:-Guardería}
+
+        ports:
+            - "3000:3000"
+
+    # -------------------------------------------------------------------------
+    # El proxy
+    # -------------------------------------------------------------------------
+    #
+    # En desarrollo también hay proxy, para que la URL sea siempre la misma y no
+    # cambien las direcciones de retorno entre una máquina y otra.
+    caddy:
+        image: caddy:2.10.0-alpine
+        restart: unless-stopped
+
+        depends_on:
+            - api
+            - web
+
+        ports:
+            - "8080:80"
+            - "8443:443"
+
+        volumes:
+            - ../deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            - datos-caddy:/data
+
+volumes:
+    datos-postgres:
+    datos-redis:
+    datos-caddy:
+    almacen-api:
+    almacen-api-bootstrap:

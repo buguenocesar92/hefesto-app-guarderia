@@ -1,0 +1,25 @@
+# Dependencias
+/node_modules
+/.nuxt
+/.output
+/.data
+/dist
+
+# Archivo de entorno: NUNCA se versiona.
+.env
+.env.backup
+.env.production
+.env.*.local
+
+# Registros
+*.log
+/logs
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+/.idea
+/.vscode
+*.swp

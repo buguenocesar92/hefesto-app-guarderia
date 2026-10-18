@@ -117,6 +117,64 @@ class Usuario extends Model implements Authenticatable
         return trim($this->nombres . ' ' . $this->apellidos);
     }
 
+    /*
+    |----------------------------------------------------------------------
+    | Contrato de autenticación
+    |----------------------------------------------------------------------
+    |
+    | La contraseña NO está en esta tabla. La contraseña está en Authentik, y
+    | esta aplicación nunca la ve.
+    |
+    | Estos cuatro métodos existen porque Laravel los pide. `getAuthPassword()`
+    | devuelve un vacío CON HASH porque es el único valor que la interfaz exige,
+    | y devolver `''` a secas rompe el guardado de contraseña en cualquier lugar
+    | que la intente usar.
+    |
+    | Si alguna vez se necesita autenticación LOCAL, no se implementa acá: se
+    | agrega un proveedor propio y una tabla propia. Agregarla a esta tabla
+    | sería devolver a guardar contraseñas de personal en la base de datos de
+    | una guardería. Ver docs/07.
+    |
+    */
+
+    public function getAuthIdentifierName(): string
+    {
+        return 'id';
+    }
+
+    public function getAuthIdentifier(): string
+    {
+        return (string) $this->getKey();
+    }
+
+    public function getAuthPasswordName(): string
+    {
+        return 'contrasena';
+    }
+
+    public function getAuthPassword(): string
+    {
+        return Hash::make('');
+    }
+
+    /**
+     * El remember token es una cadena vacía en vez de `null`.
+     *
+     * `null` haría que Laravel generara uno nuevo en cada solicitud. Vacía es
+     * la respuesta correcta: esta aplicación no usa "recordarme".
+     */
+    public function getRememberToken(): string
+    {
+        return '';
+    }
+
+    public function setRememberToken($value): void {}
+
+    public function getRememberTokenName(): string
+    {
+        return '';
+    }
+
     /**
      * Por qué esta persona no puede ver algo, o `null` si sí puede.
      *

@@ -1,0 +1,113 @@
+# =============================================================================
+# Proxy público de Guardería
+# =============================================================================
+#
+# EN PRODUCCIÓN, SÓLO ESTE SERVICIO PUBLICA PUERTOS
+# ---------------------------------------------------
+# La API, la interfaz, PostgreSQL y Redis no publican nada hacia fuera. Cada uno
+# de esos servicios tiene puertos expuestos en su bloque, pero están en la red
+# interna y `ports:` está omitido a propósito.
+#
+# La razón es que esta aplicación maneja datos de menores y de salud. Una base de
+# datos con el puerto abierto es una base de datos a la que se puede llegar sin
+# pasar por la autenticación de la aplicación, y la Row Level Security protege
+# las filas pero no protege el puerto.
+#
+# Ver `deploy/docker-compose.prod.yml` y docs/03.
+#
+# TLS
+# ---
+# Caddy pide el certificado a Let's Encrypt y lo renueva solo. Para que eso
+# funcione hace falta que este contenedor reciba tráfico por el puerto 443 desde
+# internet y que el dominio resuelva a esta máquina.
+#
+# Si la instalación está detrás de un balanceador, quite el bloque `automatico`
+# y ponga `tls internal`: el certificado lo emite la autoridad interna del
+# orquestador y el navegador tiene que confiar en ella. Ver docs/04.
+
+{
+    email admin@ejemplo.local
+}
+
+# -----------------------------------------------------------------------------
+# El dominio de la instalación
+# -----------------------------------------------------------------------------
+#
+# PENDIENTE: reemplazar por el dominio real. Está vacío a propósito: escribir un
+# dominio inventado haría que el despliegue fallara con un error de DNS en vez
+# de fallar con un mensaje claro.
+guarderia.ejemplo.local {
+    encode zstd gzip
+
+    # Los registros van a la salida estándar del contenedor, donde los recoge el
+    # orquestador. Un archivo de log dentro del contenedor desaparece cuando se
+    # recrea, y en esta aplicación eso puede ser el registro de accesos.
+    log {
+        output stdout
+        format console
+    }
+
+    # -----------------------------------------------------------------------------
+    # La interfaz
+    # -----------------------------------------------------------------------------
+    #
+    # La que ve la gente. Todas las rutas de la aplicación van acá, y la interfaz
+    # decide qué es API.
+    handle {
+        reverse_proxy web:3000
+    }
+
+    # -----------------------------------------------------------------------------
+    # La API
+    # -----------------------------------------------------------------------------
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # -----------------------------------------------------------------------------
+    # Lo que este servicio NO hace
+    # -----------------------------------------------------------------------------
+    #
+    # No expone PostgreSQL. No expone Redis. No expone un panel de administración
+    # de la base de datos, ni una consola de PHP.
+    #
+    # Lo que no se expone, no se expone porque no está escrito acá, y no porque
+    # haya una regla que lo bloquee: una regla se puede aflojar, un servicio que
+    # no está en el archivo no existe.
+    #
+    # -----------------------------------------------------------------------------
+    # Las cabeceras
+    # -----------------------------------------------------------------------------
+    header {
+        # Nunca referir desde esta aplicación a ninguna otra. Una pantalla de
+        # retiro con el dato de un menor en el enlace de una página sería una
+        # fuga por el simple hecho de que alguien copiara la barra de direcciones.
+        -Referrer-Policy
+
+        # El tipo de contenido no se adivina: una respuesta JSON que el navegador
+        # crea que es HTML se ejecuta como HTML.
+        X-Content-Type-Options nosniff
+
+        # Esta aplicación no usa iframes. Permitirlos pondría la interfaz de una
+        # guardería dentro de un marco de otro sitio sin avisar.
+        X-Frame-Options DENY
+
+        # La política de contenido es la que impide que una respuesta con datos
+        # de un menor se cargue en un marco de otro origen.
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+        # Que el navegador no adivine el tipo de un archivo descargado.
+        X-Download-Options noopen
+
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # -----------------------------------------------------------------------------
+    # El registro
+    # -----------------------------------------------------------------------------
+    log {
+        output stdout
+        format console
+    }
+}

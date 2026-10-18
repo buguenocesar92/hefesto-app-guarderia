@@ -1,0 +1,584 @@
+/*
+ |==============================================================================
+ | Estilos de Guardería
+ |==============================================================================
+ |
+ | PANTALLAS DE PIE Y ALTA FRECUENCIA
+ | ---------------------------------
+ | Esta aplicación se usa de pie, con hambre y con un niño esperando. Eso
+ | cambia las reglas del diseño:
+ |
+ |   - Los textos son GRANDES. Una letra chica en una pantalla que se mira de
+ |     lejos y con poca atención es una letra que no se lee.
+ |   - Los colores de estado son LLAMATIVOS. Verde si se puede, rojo si no.
+ |   - El botón principal es ANCHO. Se aprieta con la mano ocupada.
+ |   - Los estados críticos se muestran ENTEROS, no como una nota al pie.
+ |
+ | POR QUÉ HAY TANTO COMENTARIO AQUÍ
+ | ---------------------------------
+ | Porque el color de "vencido" no es una elección estética. Es la diferencia
+ | entre que alguien se lleve a un niño y no. Si alguien cambia el rojo por un
+ | gris suave para que "se vea mejor", tiene que leer por qué estaba rojo.
+ |
+ | Ver docs/01.
+ |
+ */
+
+/* -----------------------------------------------------------------------------
+ | Base
+ | -------------------------------------------------------------------------- */
+
+:root {
+    /* Los colores de estado. Estos tres nombres son un contrato con el resto de
+       la aplicación: si aparece `--estado-vencido`, es para marcar que NO. */
+    --estado-ok: #1b7f3b;
+    --estado-ok-suave: #e6f4ea;
+    --estado-vencido: #b3261e;
+    --estado-vencido-suave: #fdecea;
+    --estado-aviso: #8a5a00;
+    --estado-aviso-suave: #fff4e0;
+
+    --tinta: #1f2328;
+    --tinta-suave: #57606a;
+    --linea: #d7dce1;
+    --fondo: #f6f7f9;
+    --papel: #ffffff;
+
+    --radio: 10px;
+    --sombra: 0 1px 2px rgba(31, 35, 40, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    /* Letra grande por omisión. Ver la nota de arriba. */
+    font-size: 17px;
+}
+
+body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--tinta);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.55;
+}
+
+h1, h2, h3 {
+    line-height: 1.25;
+    margin: 0 0 0.6em;
+}
+
+h1 {
+    font-size: 1.7rem;
+}
+
+h2 {
+    font-size: 1.3rem;
+}
+
+/* -----------------------------------------------------------------------------
+ | Estructura
+ | -------------------------------------------------------------------------- */
+
+.marco {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.cabecera {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1.5rem;
+    background: var(--papel);
+    border-bottom: 2px solid var(--linea);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.marca {
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--tinta);
+    text-decoration: none;
+}
+
+.menu {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.menu a {
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radio);
+    color: var(--tinta-suave);
+    text-decoration: none;
+    font-size: 0.95rem;
+}
+
+.menu a:hover,
+.menu a.router-link-active {
+    background: var(--fondo);
+    color: var(--tinta);
+    font-weight: 600;
+}
+
+.sesion {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.persona {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+    line-height: 1.2;
+}
+
+.persona small {
+    color: var(--tinta-suave);
+}
+
+.contenido {
+    flex: 1;
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.75rem 1.5rem 3rem;
+}
+
+.pie {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--linea);
+    background: var(--papel);
+}
+
+.pie p {
+    margin: 0;
+    color: var(--tinta-suave);
+    font-size: 0.85rem;
+    max-width: 1180px;
+    margin-inline: auto;
+}
+
+/* -----------------------------------------------------------------------------
+ | Tarjetas y tablas
+ | -------------------------------------------------------------------------- */
+
+.tarjeta {
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    padding: 1.25rem;
+    box-shadow: var(--sombra);
+    margin-bottom: 1.25rem;
+}
+
+.tabla {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.tabla th,
+.tabla td {
+    text-align: left;
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--linea);
+    vertical-align: top;
+}
+
+.tabla th {
+    color: var(--tinta-suave);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.tabla tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* -----------------------------------------------------------------------------
+ | Botones y campos
+ | -------------------------------------------------------------------------- */
+
+.boton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    /* Anchos. Se aprietan con la mano ocupada. */
+    min-height: 3rem;
+    padding: 0.7rem 1.4rem;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    background: var(--papel);
+    color: var(--tinta);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.boton:hover {
+    background: var(--fondo);
+}
+
+.boton-plano {
+    border: none;
+    background: none;
+    color: var(--tinta-suave);
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radio);
+}
+
+.boton-plano:hover {
+    background: var(--fondo);
+}
+
+.boton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* El botón que autoriza un retiro. Verde y ancho. */
+.boton-principal {
+    background: var(--estado-ok);
+    border-color: var(--estado-ok);
+    color: #ffffff;
+}
+
+.boton-principal:hover {
+    background: #16632f;
+}
+
+/* Cuando NO se puede autorizar: no se oculta, se explica. */
+.boton-peligro {
+    background: var(--estado-vencido);
+    border-color: var(--estado-vencido);
+    color: #ffffff;
+}
+
+.campo {
+    width: 100%;
+    min-height: 2.9rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    font-size: 1rem;
+    font-family: inherit;
+    background: var(--papel);
+}
+
+.campo:focus {
+    outline: 2px solid var(--tinta-suave);
+    outline-offset: 1px;
+}
+
+.etiqueta {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+}
+
+.ayuda {
+    color: var(--tinta-suave);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+}
+
+/* -----------------------------------------------------------------------------
+ | LOS ESTADOS DE ESTADO
+ | -----------------------------------------------------------------------------
+ |
+ | La pantalla de retiro se usa de pie, con un adulto al lado, a veces con más
+ | de uno esperando. Un "vence el 12 de marzo" en letra chica, al pie de un
+ | formulario, se pasa inadvertido.
+ |
+ | Por eso el estado crítico ocupa la pantalla entera.
+ */
+
+.estado {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: var(--radio);
+    font-weight: 700;
+    font-size: 1.15rem;
+    margin-bottom: 1rem;
+}
+
+/* El aviso grande: NO AUTORIZADO / VENCIDA */
+.estado-vencido {
+    background: var(--estado-vencido-suave);
+    color: var(--estado-vencido);
+    border: 2px solid var(--estado-vencido);
+}
+
+/* El permiso: verde, para que se lea de lejos. */
+.estado-vigente {
+    background: var(--estado-ok-suave);
+    color: var(--estado-ok);
+    border: 2px solid var(--estado-ok);
+}
+
+/* Lo que hay que mirar pronto: ámbar, sin alarma. */
+.estado-aviso {
+    background: var(--estado-aviso-suave);
+    color: var(--estado-aviso);
+    border: 2px solid var(--estado-aviso);
+}
+
+/*
+ | El cartel de autorización vencida a pantalla completa.
+ |
+ | Es lo más grande de la aplicación a propósito. Se ve desde el otro lado de la
+ | puerta de la guardia, sin que nadie tenga que acercarse a leerlo.
+ */
+.cartel-vencido {
+    background: var(--estado-vencido);
+    color: #ffffff;
+    border-radius: var(--radio);
+    padding: 2.25rem 2rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.cartel-vencido h2 {
+    /* Tamaño grande a propósito. Ver la nota de arriba. */
+    font-size: clamp(2rem, 7vw, 3.5rem);
+    margin: 0 0 0.5rem;
+    letter-spacing: 0.02em;
+}
+
+.cartel-vencido p {
+    font-size: 1.15rem;
+    margin: 0;
+    max-width: 46rem;
+    margin-inline: auto;
+}
+
+/* -----------------------------------------------------------------------------
+ | Indicadores de la lista
+ | -------------------------------------------------------------------------- */
+
+.pildora {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.pildora-ok {
+    background: var(--estado-ok-suave);
+    color: var(--estado-ok);
+}
+
+.pildora-vencida {
+    background: var(--estado-vencido-suave);
+    color: var(--estado-vencido);
+}
+
+.pildora-aviso {
+    background: var(--estado-aviso-suave);
+    color: var(--estado-aviso);
+}
+
+.pildora-neutra {
+    background: var(--fondo);
+    color: var(--tinta-suave);
+}
+
+/* -----------------------------------------------------------------------------
+ | Paneles de números
+ | -------------------------------------------------------------------------- */
+
+.numero {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 1rem 1.1rem;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+}
+
+.numero strong {
+    font-size: 2.1rem;
+    line-height: 1.1;
+}
+
+.numero span {
+    color: var(--tinta-suave);
+    font-size: 0.9rem;
+}
+
+.numero-alerta {
+    border-color: var(--estado-vencido);
+    background: var(--estado-vencido-suave);
+}
+
+.numero-alerta strong {
+    color: var(--estado-vencido);
+}
+
+.rejilla {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    margin-bottom: 1.5rem;
+}
+
+/* -----------------------------------------------------------------------------
+ | Avisos y vacíos
+ | -------------------------------------------------------------------------- */
+
+.aviso {
+    padding: 1rem 1.15rem;
+    border-radius: var(--radio);
+    border: 1px solid var(--linea);
+    background: var(--fondo);
+    margin-bottom: 1rem;
+}
+
+.aviso-error {
+    background: var(--estado-vencido-suave);
+    border-color: var(--estado-vencido);
+    color: var(--estado-vencido);
+}
+
+.aviso-info {
+    background: var(--estado-ok-suave);
+    border-color: var(--estado-ok);
+    color: var(--estado-ok);
+}
+
+/*
+ | El vacío que EXPLICA.
+ |
+ | Una pantalla vacía sin explicación hace que la persona piense que el sistema
+ | falló. Y en esta aplicación, una pantalla vacía casi siempre significa que no
+ | tiene permiso: mejor decirlo.
+ */
+.vacio {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    color: var(--tinta-suave);
+    border: 1px dashed var(--linea);
+    border-radius: var(--radio);
+    background: var(--papel);
+}
+
+.vacio strong {
+    display: block;
+    color: var(--tinta);
+    margin-bottom: 0.4rem;
+    font-size: 1.1rem;
+}
+
+/* -----------------------------------------------------------------------------
+ | La pantalla de retiro
+ | -------------------------------------------------------------------------- */
+
+.pantalla-retiro {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+}
+
+@media (max-width: 860px) {
+    .pantalla-retiro {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* El niño, grande. Es la persona de la que se trata. */
+.nino-destacado {
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    padding: 1.25rem;
+}
+
+.nino-destacado h2 {
+    font-size: 1.6rem;
+    margin-bottom: 0.3rem;
+}
+
+.hora-retiro {
+    font-size: 2.4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* La lista de responsables autorizados. Toca para elegir. */
+.responsable {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    background: var(--papel);
+    cursor: pointer;
+    font-size: 1rem;
+    margin-bottom: 0.6rem;
+}
+
+.responsable:hover {
+    background: var(--fondo);
+}
+
+.responsable-elegido {
+    border-width: 2px;
+    border-color: var(--tinta);
+    background: var(--fondo);
+}
+
+/* Los NO autorizados se muestran, pero aparte y tachados. */
+.responsable-bloqueado {
+    border-style: dashed;
+    color: var(--tinta-suave);
+}
+
+/* -----------------------------------------------------------------------------
+ | Impresión
+ | -----------------------------------------------------------------------------
+ |
+ | El registro de retiro se imprime: es el papel que se le da a la familia o
+ | que queda en el archivo del centro.
+ */
+
+@media print {
+    .cabecera,
+    .pie,
+    .menu,
+    .sesion {
+        display: none;
+    }
+
+    .contenido {
+        max-width: none;
+        padding: 0;
+    }
+}

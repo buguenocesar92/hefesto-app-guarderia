@@ -10,7 +10,10 @@ use App\Models\FichaMedica;
 use App\Models\Guarderia;
 use App\Models\Nino;
 use App\Models\Usuario;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Auth\Access\Gate as GateContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Tests\Soporte\PreparaEscena;
 use Tests\TestCase;
 
@@ -38,17 +41,32 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
     use PreparaEscena;
     use RefreshDatabase;
 
+    private const ALERGIA = 'Alergia al maní, confirmada por el pediatra.';
+
     /**
-     * La Policy le responde 404 al administrativo.
+     * La Policy RECHAZA al administrativo.
      */
-    public function test_la_policy_responde_404_al_administrativo(): void
+    public function test_la_policy_rechaza_al_administrativo(): void
     {
         [$guarderia, $nino, $ficha, $administrativo] = $this->escena();
 
-        $this->enGuarderia($guarderia, function () use ($nino, $ficha, $administrativo): void {
-            $respuesta = $this->app->make(\Illuminate\Contracts\Auth\Access\Gate::class)
-                ->forUser($administrativo)
-                ->authorize('ver', $ficha);
+        $this->enGuarderia($guarderia, function () use ($ficha, $administrativo): void {
+            $rechazado = false;
+
+            try {
+                Gate::forUser($administrativo)->authorize('ver', $ficha);
+            } catch (AuthorizationException $error) {
+                $rechazado = true;
+
+                // Y el motivo explica POR QUÉ, no sólo que no.
+                $this->assertStringContainsString(
+                    'ficha médica',
+                    $error->getMessage(),
+                    'El motivo debería explicar que el rol no abre fichas médicas.',
+                );
+            }
+
+            $this->assertTrue($rechazado, 'La Policy debería rechazar al administrativo.');
         });
     }
 
@@ -91,29 +109,28 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
     /**
      * La educadora SÍ lee la ficha: necesita las alergias para el almuerzo.
      */
-    public function test_la_educadora_si_lecte_la_ficha(): void
+    public function test_la_educadora_si_lee_la_ficha(): void
     {
-        [$guarderia, $nino, , $educadora] = $this->escena();
+        [$guarderia, $nino, , , $educadora] = $this->escena();
 
-        $respuesta = $this->actingAs($educadora)
-            ->getJson('/api/v1/ninos/' . $nino->id . '/ficha-medica');
-
-        $respuesta->assertOk();
-        $respuesta->assertJsonPath('ficha.alergias', 'Alergia al maní, confirmada por el pediatra.');
-        $respuesta->assertJsonPath('ficha.tiene_restricciones', true);
+        $this->actingAs($educadora)
+            ->getJson('/api/v1/ninos/' . $nino->id . '/ficha-medica')
+            ->assertOk()
+            ->assertJsonPath('ficha.alergias', self::ALERGIA)
+            ->assertJsonPath('ficha.tiene_restricciones', true);
     }
 
     /**
      * La dirección SÍ lee la ficha: responde por el cuidado de los menores.
      */
-    public function test_la_direccion_si_lecte_la_ficha(): void
+    public function test_la_direccion_si_lee_la_ficha(): void
     {
-        [$guarderia, $nino, , $direccion] = $this->escena();
+        [$guarderia, $nino, , , , $direccion] = $this->escena();
 
         $this->actingAs($direccion)
             ->getJson('/api/v1/ninos/' . $nino->id . '/ficha-medica')
             ->assertOk()
-            ->assertJsonPath('ficha.alergias', 'Alergia al maní, confirmada por el pediatra.');
+            ->assertJsonPath('ficha.alergias', self::ALERGIA);
     }
 
     /**
@@ -128,7 +145,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
 
         $this->actingAs($administrativo)
             ->postJson('/api/v1/ninos/' . $nino->id . '/ficha-medica', [
-                'alergias' => 'Una alergia inventada por alguien que no debería poder escribirla.',
+                'alergias' => 'Una alergia escrita por alguien que no debería poder escribirla.',
             ])
             ->assertNotFound();
 
@@ -136,11 +153,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
             ->where('nino_id', $nino->id)
             ->firstOrFail());
 
-        $this->assertSame(
-            'Alergia al maní, confirmada por el pediatra.',
-            $sinCambios->alergias,
-            'La ficha no debería haber cambiado.',
-        );
+        $this->assertSame(self::ALERGIA, $sinCambios->alergias, 'La ficha no debería haber cambiado.');
     }
 
     /**
@@ -159,11 +172,10 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
             ->getJson('/api/v1/ninos/' . $nino->id . '/ficha-medica')
             ->assertNotFound();
 
-        $accesos = $this->enGuarderia($guarderia, fn (): \Illuminate\Support\Collection => Acceso::query()
+        $denegado = $this->enGuarderia($guarderia, fn (): ?Acceso => Acceso::query()
             ->where('recurso', 'fichas_medicas')
-            ->get());
-
-        $denegado = $accesos->firstWhere('resultado', 'denegado');
+            ->where('resultado', 'denegado')
+            ->first());
 
         $this->assertNotNull(
             $denegado,
@@ -175,6 +187,8 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
             $denegado->rol,
             'La bitácora tiene que decir con qué rol se intentó.',
         );
+
+        $this->assertSame($nino->id, $denegado->recurso_id, 'La bitácora tiene que decir de qué niño era la ficha.');
     }
 
     /**
@@ -182,7 +196,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
      */
     public function test_el_acceso_permitido_queda_anotado_con_rol_y_nino(): void
     {
-        [$guarderia, $nino, , $educadora] = $this->escena();
+        [$guarderia, $nino, , , $educadora] = $this->escena();
 
         $this->actingAs($educadora)
             ->getJson('/api/v1/ninos/' . $nino->id . '/ficha-medica')
@@ -195,7 +209,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
 
         $this->assertNotNull($permitido, 'El acceso permitido debería quedar anotado.');
         $this->assertSame(RolGuarderia::Educadora->value, $permitido->rol);
-        $this->assertSame($nino->id, $permitido->recurso_id, 'La bitácora tiene que decir de qué niño era la ficha.');
+        $this->assertSame($nino->id, $permitido->recurso_id);
         $this->assertNotNull($permitido->ocurrido_en, 'La bitácora tiene que decir cuándo.');
     }
 
@@ -220,7 +234,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
         foreach ($ninos as $nino) {
             $this->assertArrayHasKey('tiene_ficha_medica', $nino);
 
-            foreach ($nino as $clave => $valor) {
+            foreach (array_keys($nino) as $clave) {
                 $this->assertNotContains(
                     $clave,
                     ['alergias', 'medicacion', 'alimentos_prohibidos', 'plan_emergencia'],
@@ -231,7 +245,7 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
     }
 
     /**
-     * @return array{Guarderia, Nino, FichaMedica, Usuario}
+     * @return array{Guarderia, Nino, FichaMedica, Usuario, Usuario, Usuario}
      */
     private function escena(): array
     {
@@ -247,13 +261,13 @@ class AdministrativoNoLeeFichaMedicaTest extends TestCase
         $ficha = $this->enGuarderia($guarderia, fn (): FichaMedica => FichaMedica::create([
             'tenant_id' => $guarderia->id,
             'nino_id' => $nino->id,
-            'alergias' => 'Alergia al maní, confirmada por el pediatra.',
-            'medicacion' => ' inhalador de rescate a las 11:00.',
+            'alergias' => self::ALERGIA,
+            'medicacion' => 'Inhalador de rescate a las 11:00.',
             'alimentos_prohibidos' => 'Frutos secos, marañas.',
             'autoriza_medicamento' => true,
             'actualizado_por' => $educadora->id,
         ]));
 
-        return [$guarderia, $nino, $ficha, $administrativo];
+        return [$guarderia, $nino, $ficha, $administrativo, $educadora, $direccion];
     }
 }

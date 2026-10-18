@@ -1,0 +1,292 @@
+# =============================================================================
+# Guardería · Producción
+# =============================================================================
+#
+# ---------------------------------------------------------------------
+# EN PRODUCCIÓN, SÓLO EL PROXY PUBLICA PUERTOS
+# ---------------------------------------------------------------------
+#
+# El servicio `caddy` es el único con `ports:`. La API, la interfaz, PostgreSQL y
+# Redis no tienen puertos publicados: existen en la red interna y se hablan entre
+# ellos por el nombre del servicio.
+#
+# POR QUÉ, Y POR QUÉ IMPORTA EN ESTA APLICACIÓN
+# ---------------------------------------------
+# Una base de datos con el puerto abierto es una base de datos a la que se puede
+# llegar SIN pasar por la autenticación de la aplicación.
+#
+# En esta aplicación eso importa más que en un sistema de negocio común, porque
+# lo que hay detrás no son facturas sino datos de menores y de salud.
+#
+# La Row Level Security protege las FILAS: sin contexto de guardería, una
+# consulta no lee nada. Pero la Row Level Security no protege el PUERTO. Una base
+# de datos alcanzable desde internet está expuesta a un alcance que no se
+# relaciona con esta aplicación, y a herramientas que nadie está probando contra
+# estas políticas.
+#
+# Lo mismo con la API: expone la ruta de ingreso y las de sesión. Que no sea
+# alcanzable desde fuera de la red del centro no es un detalle de red: es parte
+# de quién puede intentar entrar.
+#
+# ---------------------------------------------------------------------
+# LOS DOS ROLES DE LA BASE DE DATOS
+# ---------------------------------------------------------------------
+#
+# POSTGRES_USER es el ROL DE ARRANQUE, y es un rol aparte a propósito. La
+# aplicación NUNCA lo usa: se conecta con `DB_USERNAME`, que es `guarderia_app`.
+#
+# LA RAZÓN, QUE ES UNA SOLA:
+#
+# En PostgreSQL, los SUPERUSUARIOS SIEMPRE se saltan las políticas de Row Level
+# Security. Siempre, sin excepción y sin ninguna opción que lo desactive.
+#
+# Cada tabla de negocio de esta aplicación lleva `FORCE ROW LEVEL SECURITY`, que
+# existe para sujetar al DUEÑO de la tabla a las políticas. Y aun así, con
+# `FORCE` puesto, un superusuario sigue leyendo todas las filas.
+#
+# O sea: si la aplicación se conectara con el rol de arranque, el código se vería
+# correcto, las políticas estarían escritas, las migraciones se habrían aplicado
+# — y la protección entre guarderías NO ESTARÍA FUNCIONANDO. Es el fallo más
+# difícil de detectar de esta arquitectura, porque no se ve en ninguna prueba que
+# no mire los atributos del rol.
+#
+# `guarderia_app` se crea en el script de inicialización con `NOSUPERUSER` y
+# `NOBYPASSRLS` explícitos, y con `ALTER DATABASE ... OWNER TO guarderia_app`
+# para que las migraciones puedan crear el esquema. Dueño, sí; superusuario,
+# nunca.
+#
+# Ver `deploy/postgres/inicializar-rol.sh` y docs/03.
+#
+# -----------------------------------------------------------------------------
+# USO
+# -----------------------------------------------------------------------------
+#   1. Copie `api/.env.example` a un archivo de entorno FUERA del control de
+#      versiones y complete los valores.
+#   2.   docker compose -f deploy/docker-compose.prod.yml up -d
+#   3.   docker compose -f deploy/docker-compose.prod.yml exec api \
+#         php artisan guarderia:crear --nombre="..." --slug="..."
+#   4.   docker compose -f deploy/docker-compose.prod.yml exec api \
+#         php artisan guarderia:verificar-aislamiento
+#
+# Los pasos 3 y 4 NO son opcionales. El paso 4 dice la verdad sobre si el
+# aislamiento está puesto, y una instalación en la que no se ha corrido NO está
+# verificada. Ver docs/04.
+
+name: guarderia
+
+services:
+
+    # -------------------------------------------------------------------------
+    # PostgreSQL
+    # -------------------------------------------------------------------------
+    postgres:
+        image: postgres:17.6-bookworm
+        restart: always
+
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:?falta POSTGRES_DB}
+            # ROL DE ARRANQUE. Dueño inicial del clúster. La aplicación no lo
+            # usa. Ver la nota del principio de este archivo.
+            POSTGRES_USER: ${POSTGRES_USER:-guarderia_admin}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+
+            # Las sumas de comprobación detectan corrupción silenciosa en
+            # disco. En una base de datos de menores y de salud, una corrupción
+            # que no se nota hasta que un nombre aparece donde no debe es peor
+            # que una caída visible.
+            POSTGRES_INITDB_ARGS: "--data-checksums"
+
+        volumes:
+            - datos-postgres:/var/lib/postgresql/data
+
+            # Crea `guarderia_app` la PRIMERA VEZ que se inicializa el volumen.
+            # Si el volumen ya existe, este script NO se vuelve a ejecutar, y por
+            # eso un despliegue sobre una base creada sin él deja la aplicación
+            # sin rol. Ver docs/04.
+            - ./postgres/inicializar-rol.sh:/docker-entrypoint-initdb.d/10-crear-rol.sh:ro
+
+        # SIN `ports:`. A propósito. Ver la nota del principio de este archivo.
+
+        networks:
+            - interna
+
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-guarderia_admin} -d ${POSTGRES_DB}"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # -------------------------------------------------------------------------
+    # Redis
+    # -------------------------------------------------------------------------
+    redis:
+        image: redis:8.2-alpine
+        restart: always
+
+        # Sin persistencia: en Redis sólo hay estado de sesión y limitadores.
+        # Si se pierde, quien estaba con la sesión abierta tiene que entrar de nuevo, y
+        # ningún dato de menor se pierde.
+        command:
+            - redis-server
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+
+        volumes:
+            - datos-redis:/data
+
+        # SIN `ports:`. A propósito.
+
+        networks:
+            - interna
+
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+
+    # -------------------------------------------------------------------------
+    # La API
+    # -------------------------------------------------------------------------
+    api:
+        build:
+            context: ..
+            dockerfile: deploy/api/Dockerfile
+            args:
+                NUXT_API_INTERNA: http://api:8000
+        image: hefesto/guarderia-api:1.0.0
+        restart: always
+
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+
+        # `env_file`: la configuración SALE de un archivo que no se versiona. En
+        # este YAML no hay ni una contraseña.
+        env_file:
+            - ../api/.env
+
+        environment:
+            APP_ENV: production
+            APP_DEBUG: "false"
+
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: ${POSTGRES_DB:?falta POSTGRES_DB}
+
+            # ROL DE LA APLICACIÓN. Dueño del esquema, sin superusuario y sin
+            # permiso para saltarse las políticas de Row Level Security.
+            #
+            # El nombre tiene que coincidir EXACTAMENTE con el que crea
+            # `deploy/postgres/inicializar-rol.sh`. Si no coinciden, la aplicación
+            # no entra, y ese es el comportamiento correcto.
+            DB_USERNAME: guarderia_app
+            DB_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD}
+
+            # En producción, conexión cifrada al servidor de base aunque esté en
+            # la misma máquina.
+            DB_SSLMODE: require
+
+            REDIS_HOST: redis
+            REDIS_PORT: "6379"
+
+            CACHE_STORE: redis
+            SESSION_DRIVER: database
+            QUEUE_CONNECTION: sync
+
+        # SIN `ports:`. El proxy es quien llega a la API, por la red interna.
+
+        networks:
+            - interna
+            - publica
+
+        healthcheck:
+            test: ["CMD", "php", "-r", "$s=@file_get_contents('http://127.0.0.1:8000/api/v1/salud'); exit($s===false?1:0);"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 40s
+
+    # -------------------------------------------------------------------------
+    # La interfaz
+    # -------------------------------------------------------------------------
+    web:
+        build:
+            context: ..
+            dockerfile: deploy/web/Dockerfile
+            args:
+                NUXT_API_INTERNA: http://api:8000
+                NUXT_PUBLIC_NOMBRE: Guardería
+        image: hefesto/guarderia-web:1.0.0
+        restart: always
+
+        depends_on:
+            - api
+
+        environment:
+            NUXT_API_INTERNA: http://api:8000
+
+        # SIN `ports:`. A propósito.
+
+        networks:
+            - interna
+            - publica
+
+        healthcheck:
+            test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 25s
+
+    # -------------------------------------------------------------------------
+    # El proxy: EL ÚNICO QUE PUBLICA PUERTOS
+    # -------------------------------------------------------------------------
+    caddy:
+        image: caddy:2.10.0-alpine
+        restart: always
+
+        depends_on:
+            - api
+            - web
+
+        ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"
+
+        volumes:
+            - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            - datos-caddy:/data
+            - datos-caddy-config:/config
+
+        networks:
+            - publica
+
+# -----------------------------------------------------------------------------
+# Las redes
+# -----------------------------------------------------------------------------
+#
+# `interna` es donde vive PostgreSQL y Redis. El proxy NO está en ella: el proxy
+# no necesita hablar con la base de datos, y si pudiera, una falla del proxy
+# sería una falla con acceso a todos los datos.
+#
+# `publica` es donde están el proxy, la API y la interfaz. Los tres se hablan por
+# nombre de servicio.
+
+networks:
+    interna:
+        internal: true
+    publica:
+
+volumes:
+    datos-postgres:
+    datos-redis:
+    datos-caddy:
+    datos-caddy-config:
