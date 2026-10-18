@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         beStrictAboutOutputDuringTests="true"
+         failOnWarning="true"
+         failOnRisky="true">
+    <testsuites>
+        <!--
+        Aislamiento: lo que tiene que ser cierto antes de recibir al primer
+        niño. Son las pruebas que fallarían en silencio si el aislamiento se
+        rompiera.
+        -->
+        <testsuite name="Aislamiento">
+            <directory>tests/Feature/Aislamiento</directory>
+        </testsuite>
+
+        <!--
+        Permisos: quién puede ver qué, y sobre todo quién NO puede.
+        -->
+        <testsuite name="Permisos">
+            <directory>tests/Feature/Permisos</directory>
+        </testsuite>
+
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <!--
+        `APP_KEY` de pruebas. Está escrita aquí a propósito y no es un secreto:
+        no protege nada real. La clave de producción va en el `.env` del
+        servidor, que no se versiona.
+        -->
+        <env name="APP_KEY" value="base64:dGVzdGluZ19hcHBfY2xhdmVfZGUgZGUgZ3VhcmRlcmlhXzEyMzQ1Njc4OTA9"/>
+        <env name="APP_DEBUG" value="false"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+
+        <env name="CACHE_STORE" value="array"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+
+        <!--
+        La hora congelada. La vigencia de una autorización y el estado de una
+        asistencia dependen de la fecha, y una prueba que se corre a las 23:59
+        puede dar un resultado distinto a la que se corrió a las 00:01.
+        -->
+        <env name="PRUEBAS_HORA_FIJADA" value="2026-10-18T12:00:00+03:00"/>
+    </php>
+</phpunit>

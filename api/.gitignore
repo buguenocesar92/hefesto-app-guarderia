@@ -1,0 +1,39 @@
+# Dependencias de Composer
+/vendor/
+
+# Archivo de entorno: NUNCA se versiona. Contiene la contraseña de la base.
+.env
+.env.backup
+.env.production
+.env.*.local
+
+# Clave de aplicación
+/.phpunit.cache
+/storage/*.key
+
+# Logs
+/storage/logs/*.log
+
+# Caché de la aplicación
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+
+# Datos de pruebas
+/storage/testing/*
+
+# Cobertura
+/coverage
+/build
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+/.idea
+/.vscode
+*.swp
