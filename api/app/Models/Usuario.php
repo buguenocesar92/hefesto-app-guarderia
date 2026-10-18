@@ -6,14 +6,23 @@ namespace App\Models;
 
 use App\Enums\RolGuarderia;
 use App\Models\Concerns\PerteneceAlaGuarderia;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Una persona que trabaja en la guardería.
+ *
+ * IMPLEMENTA `Authenticatable`
+ * ---------------------------
+ * Para que Laravel la pueda usar en `actingAs()` y para que `Gate::forUser()`
+ * la reciba. El modelo de autenticación es ESTE, no `users`: la tabla se llama
+ * `usuarios` y una tabla `users` en un sistema que maneja menores sería una
+ * fuente de confusión innecesaria. Ver `config/auth.php`.
  *
  * EL ROL SE LEE DEL USUARIO, NO DEL GRUPO DE AUTHENTIK, EN CADA PETICIÓN
  * --------------------------------------------------------------------
@@ -40,7 +49,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property \Illuminate\Support\Carbon $rol_actualizado_en
  * @property \Illuminate\Support\Carbon $creado_en
  */
-class Usuario extends Model
+class Usuario extends Model implements Authenticatable
 {
     use HasFactory;
     use HasUuids;
