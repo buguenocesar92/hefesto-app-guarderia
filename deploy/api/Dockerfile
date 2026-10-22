@@ -43,12 +43,36 @@ RUN composer dump-autoload --optimize --no-dev
 # La imagen final NO tiene Composer. El código va precompilado y las
 # dependencias van con `--no-dev`: menos superficie, y una imagen donde no hay
 # una herramienta que pueda instalar paquetes.
+# =============================================================================
+# CVE-2026-109618 / CVE-2026-109619 (PHP2Shell, 2026-10-22)
+# =============================================================================
+# La imagen se construye con PHP 8.3.36, que es la version PARCHEADA
+# de la serie 8.3. Las versiones parcheadas de PHP son
+# 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12.
+#
+# Verificado el 2026-10-22 en el servidor de desarrollo, con el tag exacto:
+#
+#     $ docker run --rm php:8.3-fpm-bookworm php -v
+#     PHP 8.3.36 (cli) (built: Oct 21 2026 16:00:25)
+#
+# El tag `php:8.3-fpm-bookworm` es FLOTANTE: no se cambia, se deja constancia.
+# El tag resuelve hoy a PHP 8.3.36, que es la version parcheada de la serie
+# 8.3. Se deja escrito porque un tag flotante puede mudar sin que nadie lo
+# note: la comprobacion va en el candado (api/tests/Unit/), que falla si el
+# tag vuelve a quedar por debajo de la version parcheada.
+#
+# OJO: LA IMAGEN DESPLIEGADA HAY QUE RECONSTRUIRLA. El parche de PHP entra en
+# el contenedor por la IMAGEN, no por este repositorio: mientras no se
+# reconstruya y se redespliegue, el contenedor sigue con el PHP viejo. El
+# endurecimiento de mas abajo (el ini y el pool de php-fpm) es la red de seguridad
+# para ese mientras, y lo que sobrevive a un redeploy.
 FROM php:8.3-fpm-bookworm AS ejecucion
 
 # Las extensiones que necesita esta API. `pdo_pgsql` es la que habla con
 # PostgreSQL; `pcntl` la que permite que el supervisor gestione los procesos;
 # `opcache` es lo que hace que el PHP no compile cada archivo en cada petición.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install --no-install-recommends --yes \
         libpq-dev \
         libicu-dev \
@@ -86,6 +110,12 @@ RUN mkdir -p /var/www/html/storage/framework/{cache/data,sessions,views} \
 WORKDIR /var/www/html
 
 COPY deploy/api/docker/php.ini /usr/local/etc/php/conf.d/guarderia.ini
+
+# Endurecimiento PHP2Shell (CVE-2026-109618 / CVE-2026-109619):
+# la via CONFIRMADA (session.upload_progress) apagada, y los
+# trabajadores de php-fpm reciclados cada 100 peticiones.
+COPY deploy/api/docker/99-php2shell-hardening.ini /usr/local/etc/php/conf.d/99-php2shell-hardening.ini
+COPY deploy/api/docker/zz-php2shell-fpm.conf /usr/local/etc/php-fpm.d/zz-php2shell-hardening.conf
 COPY deploy/api/docker/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/api/docker/supervisord.conf /etc/supervisor/conf.d/guarderia.conf
 COPY deploy/api/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
